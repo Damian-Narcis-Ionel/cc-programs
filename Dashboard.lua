@@ -19,7 +19,7 @@ if not monitor then
 end
 
 local REFRESH_SECONDS = 2
-local SPLASH_SECONDS = 1.2
+local SPLASH_SECONDS = 0.4
 local ROWS_PER_PAGE = 5
 
 local chestMeta = {}
@@ -200,11 +200,13 @@ local function scanChestMeta(name)
 
   local inv = peripheral.wrap(name)
   local totalSlots = inv.size()
-  local maxItems = 0
+  local firstSlotLimit = 0
 
-  for slot = 1, totalSlots do
-    maxItems = maxItems + inv.getItemLimit(slot)
+  if totalSlots > 0 then
+    firstSlotLimit = inv.getItemLimit(1) or 0
   end
+
+  local maxItems = totalSlots * firstSlotLimit
 
   chestMeta[name] = {
     present = true,
@@ -510,11 +512,13 @@ local function scanAllChests()
     return
   end
 
-  for i, chestName in ipairs(ordered) do
-    drawSplash((i - 1) / total, i - 1, total, chestName)
+  local preloadCount = math.min(total, ROWS_PER_PAGE * 3)
+
+  for i = 1, preloadCount do
+    local chestName = ordered[i]
+    drawSplash((i - 1) / preloadCount, i - 1, preloadCount, chestName)
     scanChestMeta(chestName)
-    drawSplash(i / total, i, total, chestName)
-    sleep(0.05)
+    drawSplash(i / preloadCount, i, preloadCount, chestName)
   end
 end
 
@@ -536,10 +540,9 @@ local function handleTouch(side, x, y, pageCount)
   end
 
   local w = select(1, monitor.getSize())
+  local _, h = monitor.getSize()
 
-local _, h = monitor.getSize()
-
-if y == h and x >= 2 and x <= 7 then
+  if y == h and x >= 2 and x <= 7 then
     currentPage = currentPage - 1
     if currentPage < 1 then
       currentPage = pageCount
