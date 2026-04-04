@@ -25,6 +25,26 @@ local chests = {
   armory_top    = "minecraft:chest_26",
   armory_mid    = "minecraft:chest_27",
   armory_bottom = "minecraft:chest_28",
+
+  flowers_1 = "minecraft:chest_48",
+  flowers_2 = "minecraft:chest_30",
+  flowers_3 = "minecraft:chest_34",
+  flowers_4 = "minecraft:chest_33",
+
+  building_1 = "minecraft:chest_45",
+  building_2 = "minecraft:chest_29",
+  building_3 = "minecraft:chest_31",
+  building_4 = "minecraft:chest_32",
+
+  mobs_1 = "minecraft:chest_46",
+  mobs_2 = "minecraft:chest_37",
+  mobs_3 = "minecraft:chest_36",
+  mobs_4 = "minecraft:chest_35",
+
+  blocks_1 = "minecraft:chest_47",
+  blocks_2 = "minecraft:chest_40",
+  blocks_3 = "minecraft:chest_39",
+  blocks_4 = "minecraft:chest_38",
 }
 
 monitors = {
@@ -64,6 +84,18 @@ return {
     }},
     { key = "armory", label = "Armory", chests = {
       chests.armory_top, chests.armory_mid, chests.armory_bottom
+    }},
+    { key = "flowers", label = "Flowers", chests = {
+      chests.flowers_1, chests.flowers_2, chests.flowers_3, chests.flowers_4
+    }},
+    { key = "building", label = "Building", chests = {
+      chests.building_1, chests.building_2, chests.building_3, chests.building_4
+    }},
+    { key = "mobs", label = "Mobs", chests = {
+      chests.mobs_1, chests.mobs_2, chests.mobs_3, chests.mobs_4
+    }},
+    { key = "blocks", label = "Blocks", chests = {
+      chests.blocks_1, chests.blocks_2, chests.blocks_3, chests.blocks_4
     }},
   }
 }

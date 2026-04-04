@@ -12,6 +12,11 @@ return {
       path = "labels.lua",
     },
 
+    setup_storage = {
+      file = "setup_storage.lua",
+      path = "setup_storage.lua",
+    },
+
     sorter = {
       file = "sorter.lua",
       path = "sorter.lua",
