@@ -539,6 +539,39 @@ local function undoLast()
   resetBaseline()
 end
 
+local function clearActiveCategory()
+  if not state.activeCategoryKey then
+    setMessage("Select a category first.")
+    return
+  end
+
+  local category = categoryByKey(state.activeCategoryKey)
+  if not category then
+    setMessage("Active category is missing.")
+    return
+  end
+
+  category.chests = {}
+  resetBaseline()
+  setMessage("Cleared category: " .. category.label)
+end
+
+local function startFresh()
+  state.inputName = nil
+  state.mode = "input"
+  state.currentIndex = 1
+  state.categoryPage = 1
+  state.activeCategoryKey = nil
+  state.history = {}
+
+  for _, category in ipairs(state.categories) do
+    category.chests = {}
+  end
+
+  resetBaseline()
+  setMessage("Started fresh. All assignments cleared.")
+end
+
 local function render()
   monitor.setTextScale(1)
   monitor.setBackgroundColor(colors.black)
@@ -602,6 +635,7 @@ local function render()
       writeCentered(monitor, h - 4, ("Page %d/%d"):format(state.categoryPage, pageCount), colors.white, colors.black)
     end
 
+    drawButton(monitor, buttons, "clear_category", 2, h - 5, 14, 2, "Clear Category", colors.red, colors.white)
     drawButton(monitor, buttons, "confirm_category", math.max(2, math.floor((w - 20) / 2)), h - 5, 20, 2, "Confirm Category", colors.green, colors.black)
     drawButton(monitor, buttons, "undo", 2, h - 2, 8, 2, "Undo", colors.orange, colors.black)
     drawButton(monitor, buttons, "save", w - 7, h - 2, 8, 2, "Save", colors.lime, colors.black)
@@ -613,6 +647,7 @@ local function render()
   drawButton(monitor, buttons, "next", w - 7, h - 8, 8, 2, "Next >", colors.lightGray, colors.black)
   drawButton(monitor, buttons, "mark", math.max(2, math.floor((w - 14) / 2)), h - 8, 14, 2, "Find Marked", colors.purple, colors.white)
   drawButton(monitor, buttons, "reset", math.max(2, math.floor((w - 14) / 2)), h - 11, 14, 2, "Reset Baseline", colors.gray, colors.black)
+  drawButton(monitor, buttons, "start_fresh", w - 13, h - 11, 12, 2, "Start Fresh", colors.red, colors.white)
 
   writeCentered(monitor, h, "Change one or more chests, then tap Find Marked", colors.lightGray, colors.black)
 
@@ -658,6 +693,8 @@ local function handleButton(id)
     state.categoryPage = math.max(1, state.categoryPage - 1)
   elseif id == "cat_next" then
     state.categoryPage = state.categoryPage + 1
+  elseif id == "clear_category" then
+    clearActiveCategory()
   elseif id == "confirm_category" then
     if not state.activeCategoryKey then
       setMessage("Select a category first.")
@@ -666,6 +703,8 @@ local function handleButton(id)
       setMessage(("Confirmed %s with %d chest(s)."):format(category.label, #category.chests))
       state.activeCategoryKey = nil
     end
+  elseif id == "start_fresh" then
+    startFresh()
   elseif string.sub(id, 1, 4) == "cat:" then
     state.activeCategoryKey = string.sub(id, 5)
     local category = categoryByKey(state.activeCategoryKey)
