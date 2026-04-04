@@ -55,7 +55,7 @@ Tells the updater which files to download and where to save them.
 ### `setup_storage.lua`
 Interactive storage mapping tool.
 
-It uses the dashboard monitor for a clickable setup flow, can auto-load the current config, writes a backup of `sorter_config.lua`, and lets you assign chests category-by-category using monitor buttons.
+It uses the dashboard monitor for a clickable setup flow, can auto-load the current config, and lets you assign chests category-by-category using monitor buttons.
 
 ## Why slot-based fullness?
 
@@ -121,7 +121,6 @@ Workflow:
 Important:
 - opening a chest is not enough for detection
 - the script identifies a chest by inventory content changes
-- before saving, the old config is backed up to `sorter_config.lua.bak`
 
 ## Repository Structure
 
