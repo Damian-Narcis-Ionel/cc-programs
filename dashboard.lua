@@ -568,6 +568,7 @@ setScaleAndGetSize()
 drawSplash(0, 0, 1, "Preparing scan...")
 scanAllChests()
 sleep(SPLASH_SECONDS)
+print("Dashboard is active !")
 
 while true do
   local w, h = setScaleAndGetSize()
