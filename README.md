@@ -131,6 +131,7 @@ Workflow:
 - tap a category on the monitor
 - add or remove one temporary item in a chest from that category
 - tap `Find Marked`
+- tap `Assign Label`, then touch the small monitor for that category
 - repeat until that category has all of its chests
 - tap `Confirm Category`
 - tap `Save` when finished

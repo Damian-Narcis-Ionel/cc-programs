@@ -108,6 +108,16 @@ local function collectInventories()
   return out
 end
 
+local function collectMonitors()
+  local out = {}
+  for _, name in ipairs(sortedPeripheralNames()) do
+    if isMonitor(name) then
+      out[#out + 1] = name
+    end
+  end
+  return out
+end
+
 local function makeCategoryState(cfg)
   local existingByKey = {}
   if cfg and type(cfg.categories) == "table" then
@@ -294,6 +304,7 @@ local existingConfig = loadExistingConfig()
 local dashboardMonitorName = detectDashboardMonitor(existingConfig)
 local monitor = peripheral.wrap(dashboardMonitorName)
 local allInventories = collectInventories()
+local allMonitors = collectMonitors()
 local inventorySet = {}
 for _, name in ipairs(allInventories) do
   inventorySet[name] = true
@@ -308,6 +319,7 @@ local state = {
   currentIndex = 1,
   categoryPage = 1,
   activeCategoryKey = nil,
+  pendingMonitorCategoryKey = nil,
   message = "Touch buttons on the monitor to configure storage.",
   history = {},
   baseline = {},
@@ -344,6 +356,14 @@ local function categoryByKey(key)
     end
   end
   return nil
+end
+
+local function monitorLabelForCategory(categoryKey)
+  local name = state.monitors[categoryKey]
+  if type(name) == "string" and name ~= "" then
+    return name
+  end
+  return "unassigned"
 end
 
 local function assignedSet()
@@ -558,6 +578,65 @@ local function clearActiveCategory()
   setMessage("Cleared category: " .. category.label)
 end
 
+local function beginMonitorAssignment()
+  if not state.activeCategoryKey then
+    setMessage("Select a category first.")
+    return
+  end
+
+  if #allMonitors <= 1 then
+    setMessage("No extra monitor found for labels.")
+    return
+  end
+
+  local category = categoryByKey(state.activeCategoryKey)
+  state.pendingMonitorCategoryKey = state.activeCategoryKey
+  setMessage(("Touch the label monitor for %s."):format(category.label))
+end
+
+local function clearActiveCategoryMonitor()
+  if not state.activeCategoryKey then
+    setMessage("Select a category first.")
+    return
+  end
+
+  local category = categoryByKey(state.activeCategoryKey)
+  state.monitors[state.activeCategoryKey] = nil
+  if state.pendingMonitorCategoryKey == state.activeCategoryKey then
+    state.pendingMonitorCategoryKey = nil
+  end
+  setMessage(("Cleared label monitor for %s."):format(category.label))
+end
+
+local function assignPendingMonitor(monitorName)
+  local categoryKey = state.pendingMonitorCategoryKey
+  if not categoryKey then
+    return false
+  end
+
+  if monitorName == state.monitorName then
+    setMessage("Touch a label monitor, not the dashboard monitor.")
+    return true
+  end
+
+  if not isMonitor(monitorName) then
+    setMessage("Touched peripheral is not a monitor.")
+    return true
+  end
+
+  local category = categoryByKey(categoryKey)
+  if not category then
+    state.pendingMonitorCategoryKey = nil
+    setMessage("Selected category is missing.")
+    return true
+  end
+
+  state.monitors[categoryKey] = monitorName
+  state.pendingMonitorCategoryKey = nil
+  setMessage(("Assigned label monitor %s -> %s"):format(monitorName, category.label))
+  return true
+end
+
 local function startFresh()
   state.inputName = nil
   state.mode = "input"
@@ -598,7 +677,8 @@ local function render()
     writeCentered(monitor, 5, state.mode == "input" and "Assign an input chest to continue" or "All detected chests are assigned", colors.gray, colors.black)
   end
 
-  local rowsAvailable = math.max(1, math.floor((h - 10) / 3))
+  local reservedRows = state.mode == "assign" and 17 or 10
+  local rowsAvailable = math.max(1, math.floor((h - reservedRows) / 2))
   local pageSize = rowsAvailable * 2
   local pageCount = math.max(1, math.ceil(#state.categories / pageSize))
   if state.categoryPage > pageCount then
@@ -614,9 +694,14 @@ local function render()
 
     local activeCategory = state.activeCategoryKey and categoryByKey(state.activeCategoryKey) or nil
     if activeCategory then
-      writeCentered(monitor, 6, clip(("Selected: %s (%d/%d)"):format(activeCategory.label, #activeCategory.chests, activeCategory.desired), w), colors.lime, colors.black)
+      local selectedText = ("Selected: %s (%d/%d)"):format(activeCategory.label, #activeCategory.chests, activeCategory.desired)
+      writeCentered(monitor, 6, clip(selectedText, w), colors.lime, colors.black)
+      local monitorText = "Label monitor: " .. monitorLabelForCategory(activeCategory.key)
+      local monitorColor = state.pendingMonitorCategoryKey == activeCategory.key and colors.cyan or colors.gray
+      writeCentered(monitor, 7, clip(monitorText, w), monitorColor, colors.black)
     else
       writeCentered(monitor, 6, "Selected: none", colors.yellow, colors.black)
+      writeCentered(monitor, 7, "Label monitor: none", colors.gray, colors.black)
     end
 
     for i = pageStart, math.min(#state.categories, pageStart + pageSize - 1) do
@@ -624,7 +709,7 @@ local function render()
       local col = ((i - pageStart) % 2)
       local row = math.floor((i - pageStart) / 2)
       local x = col == 0 and leftX or rightX
-      local yy = y + (row * 3)
+      local yy = y + (row * 2)
       local label = ("%s %d/%d"):format(category.label, #category.chests, category.desired)
       local bg = category.key == state.activeCategoryKey and colors.lime or colors.blue
       local fg = category.key == state.activeCategoryKey and colors.black or colors.white
@@ -637,21 +722,24 @@ local function render()
       writeCentered(monitor, h - 4, ("Page %d/%d"):format(state.categoryPage, pageCount), colors.white, colors.black)
     end
 
-    drawButton(monitor, buttons, "clear_category", 2, h - 5, 14, 2, "Clear Category", colors.red, colors.white)
-    drawButton(monitor, buttons, "confirm_category", math.max(2, math.floor((w - 20) / 2)), h - 5, 20, 2, "Confirm Category", colors.green, colors.black)
+    drawButton(monitor, buttons, "clear_category", 2, h - 8, 14, 2, "Clear Chests", colors.red, colors.white)
+    drawButton(monitor, buttons, "assign_monitor", math.max(2, math.floor((w - 16) / 2)), h - 8, 16, 2, "Assign Label", colors.cyan, colors.black)
+    drawButton(monitor, buttons, "clear_monitor", w - 13, h - 8, 12, 2, "Clear Label", colors.gray, colors.black)
+    drawButton(monitor, buttons, "confirm_category", math.max(2, math.floor((w - 20) / 2)), h - 2, 20, 2, "Confirm Category", colors.green, colors.black)
     drawButton(monitor, buttons, "undo", 2, h - 2, 8, 2, "Undo", colors.orange, colors.black)
     drawButton(monitor, buttons, "save", w - 7, h - 2, 8, 2, "Save", colors.lime, colors.black)
   else
     drawButton(monitor, buttons, "set_input", math.max(2, math.floor((w - 14) / 2)), 8, 14, 3, "Set Input", colors.lime, colors.black)
   end
 
-  drawButton(monitor, buttons, "prev", 2, h - 8, 8, 2, "< Prev", colors.lightGray, colors.black)
-  drawButton(monitor, buttons, "next", w - 7, h - 8, 8, 2, "Next >", colors.lightGray, colors.black)
-  drawButton(monitor, buttons, "mark", math.max(2, math.floor((w - 14) / 2)), h - 8, 14, 2, "Find Marked", colors.purple, colors.white)
-  drawButton(monitor, buttons, "reset", math.max(2, math.floor((w - 14) / 2)), h - 11, 14, 2, "Reset Baseline", colors.gray, colors.black)
-  drawButton(monitor, buttons, "start_fresh", w - 13, h - 11, 12, 2, "Start Fresh", colors.red, colors.white)
+  drawButton(monitor, buttons, "prev", 2, h - 11, 8, 2, "< Prev", colors.lightGray, colors.black)
+  drawButton(monitor, buttons, "next", w - 7, h - 11, 8, 2, "Next >", colors.lightGray, colors.black)
+  drawButton(monitor, buttons, "mark", math.max(2, math.floor((w - 14) / 2)), h - 11, 14, 2, "Find Marked", colors.purple, colors.white)
+  drawButton(monitor, buttons, "reset", math.max(2, math.floor((w - 14) / 2)), h - 14, 14, 2, "Reset Baseline", colors.gray, colors.black)
+  drawButton(monitor, buttons, "start_fresh", w - 13, h - 14, 12, 2, "Start Fresh", colors.red, colors.white)
 
-  writeCentered(monitor, h, "Change one or more chests, then tap Find Marked", colors.lightGray, colors.black)
+  local footer = state.pendingMonitorCategoryKey and "Touch a label monitor to assign it" or "Change chests, then tap Find Marked"
+  writeCentered(monitor, h, clip(footer, w), colors.lightGray, colors.black)
 
   return buttons
 end
@@ -697,17 +785,26 @@ local function handleButton(id)
     state.categoryPage = state.categoryPage + 1
   elseif id == "clear_category" then
     clearActiveCategory()
+  elseif id == "assign_monitor" then
+    beginMonitorAssignment()
+  elseif id == "clear_monitor" then
+    clearActiveCategoryMonitor()
   elseif id == "confirm_category" then
     if not state.activeCategoryKey then
       setMessage("Select a category first.")
     else
       local category = categoryByKey(state.activeCategoryKey)
-      setMessage(("Confirmed %s with %d chest(s)."):format(category.label, #category.chests))
+      setMessage(("Confirmed %s with %d chest(s), label monitor %s."):format(
+        category.label,
+        #category.chests,
+        monitorLabelForCategory(category.key)
+      ))
       state.activeCategoryKey = nil
     end
   elseif id == "start_fresh" then
     startFresh()
   elseif string.sub(id, 1, 4) == "cat:" then
+    state.pendingMonitorCategoryKey = nil
     state.activeCategoryKey = string.sub(id, 5)
     local category = categoryByKey(state.activeCategoryKey)
     setMessage(("Selected category: %s. Mark chests and tap Find Marked."):format(category.label))
@@ -727,10 +824,21 @@ while true do
   local buttons = render()
   local event, p1, p2, p3 = os.pullEvent()
 
-  if event == "monitor_touch" and p1 == state.monitorName then
-    local id = hitButton(buttons, p2, p3)
-    if id then
-      handleButton(id)
+  if event == "monitor_touch" then
+    if state.pendingMonitorCategoryKey then
+      if assignPendingMonitor(p1) then
+        -- handled monitor assignment touch
+      elseif p1 == state.monitorName then
+        local id = hitButton(buttons, p2, p3)
+        if id then
+          handleButton(id)
+        end
+      end
+    elseif p1 == state.monitorName then
+      local id = hitButton(buttons, p2, p3)
+      if id then
+        handleButton(id)
+      end
     end
   elseif event == "key" and p1 == keys.q then
     monitor.setBackgroundColor(colors.black)
