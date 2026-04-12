@@ -6,48 +6,17 @@ if not ok then
 end
 
 local DISK_MOUNT = CFG.disk_mount or "disk"
-local PROGRAMS = CFG.programs or {}
-local CONFIGS = CFG.configs or {}
+local BOOTSTRAP = CFG.bootstrap or {}
+local APPS = CFG.apps or {}
 local GITHUB = CFG.github or {}
 
 local function sortedKeys(tbl)
   local keys = {}
-  for k in pairs(tbl) do
-    keys[#keys + 1] = k
+  for key in pairs(tbl) do
+    keys[#keys + 1] = key
   end
   table.sort(keys)
   return keys
-end
-
-local function usage()
-  print("Usage:")
-  print("  update <target>")
-  print("  update all")
-  print("")
-  print("Available programs:")
-  for _, name in ipairs(sortedKeys(PROGRAMS)) do
-    local entry = PROGRAMS[name]
-    print("  " .. name .. " -> " .. DISK_MOUNT .. "/" .. (entry.file or (name .. ".lua")))
-  end
-  if next(CONFIGS) then
-    print("")
-    print("Available configs:")
-    for _, name in ipairs(sortedKeys(CONFIGS)) do
-      local entry = CONFIGS[name]
-      print("  " .. name .. " -> " .. (entry.target or ("/" .. (entry.file or (name .. ".lua")))))
-    end
-  end
-end
-
-if #args == 0 then
-  usage()
-  return
-end
-
-local function ensureDiskMounted()
-  if not fs.exists(DISK_MOUNT) or not fs.isDir(DISK_MOUNT) then
-    error("Disk mount '" .. DISK_MOUNT .. "' not found. Insert the floppy first.")
-  end
 end
 
 local function joinPath(a, b)
@@ -61,6 +30,12 @@ local function ensureParentDir(path)
   local dir = fs.getDir(path)
   if dir ~= "" and not fs.exists(dir) then
     fs.makeDir(dir)
+  end
+end
+
+local function ensureDiskMounted()
+  if not fs.exists(DISK_MOUNT) or not fs.isDir(DISK_MOUNT) then
+    error("Disk mount '" .. DISK_MOUNT .. "' not found. Insert the floppy first.")
   end
 end
 
@@ -95,7 +70,6 @@ local function downloadUrl(url, label)
   end
 
   local response, err = http.get(url)
-
   if not response then
     error("Failed to download " .. label .. ": " .. tostring(err))
   end
@@ -122,89 +96,32 @@ local function writeFile(path, text)
   file.close()
 end
 
-local function installOrUpdateOne(name)
-  local entry = PROGRAMS[name]
-  if not entry then
-    error("Unknown program: " .. name)
-  end
-
-  local fileName = entry.file or (name .. ".lua")
-  local targetPath = joinPath(DISK_MOUNT, fileName)
-  local tempPath = targetPath .. ".new"
-
-  local existed = fs.exists(targetPath)
-
-  if existed then
-    print("Updating " .. name .. " -> " .. targetPath)
-  else
-    print("Installing " .. name .. " -> " .. targetPath)
-  end
-
-  local downloadLabel
-  local text
-
-  local githubUrl, githubErr = buildGitHubRawUrl(entry)
-  if githubUrl then
-    downloadLabel = githubUrl
-    text = downloadUrl(githubUrl, githubUrl)
-  elseif type(entry.code) == "string" and entry.code ~= "" then
-    local pasteUrl = "https://pastebin.com/raw/" .. entry.code
-    downloadLabel = pasteUrl
-    text = downloadUrl(pasteUrl, pasteUrl)
-  else
-    error("Program '" .. name .. "' is missing a GitHub source and Pastebin code" .. (githubErr and (": " .. githubErr) or "."))
-  end
-
-  if fs.exists(tempPath) then
-    fs.delete(tempPath)
-  end
-
-  writeFile(tempPath, text)
-
-  if existed then
-    fs.delete(targetPath)
-  end
-
-  fs.move(tempPath, targetPath)
-
-  if existed then
-    print("Updated " .. name)
-  else
-    print("Installed " .. name)
-  end
-end
-
-local function installOrUpdateConfig(name)
-  local entry = CONFIGS[name]
-  if not entry then
-    error("Unknown config: " .. name)
-  end
-
-  local targetPath = entry.target or ("/" .. (entry.file or (name .. ".lua")))
+local function installEntry(label, targetPath, entry)
   local tempPath = targetPath .. ".new"
   local preserve = entry.preserve_existing == true
   local existed = fs.exists(targetPath)
 
   if preserve and existed then
-    print("Keeping existing " .. name .. " -> " .. targetPath)
+    print("Keeping existing " .. label .. " -> " .. targetPath)
     return
   end
 
   if existed then
-    print("Updating " .. name .. " -> " .. targetPath)
+    print("Updating " .. label .. " -> " .. targetPath)
   else
-    print("Installing " .. name .. " -> " .. targetPath)
+    print("Installing " .. label .. " -> " .. targetPath)
   end
 
   local githubUrl, githubErr = buildGitHubRawUrl(entry)
   local text
+
   if githubUrl then
     text = downloadUrl(githubUrl, githubUrl)
   elseif type(entry.code) == "string" and entry.code ~= "" then
     local pasteUrl = "https://pastebin.com/raw/" .. entry.code
     text = downloadUrl(pasteUrl, pasteUrl)
   else
-    error("Config '" .. name .. "' is missing a GitHub source and Pastebin code" .. (githubErr and (": " .. githubErr) or "."))
+    error(label .. " is missing a GitHub source and Pastebin code" .. (githubErr and (": " .. githubErr) or "."))
   end
 
   if fs.exists(tempPath) then
@@ -220,28 +137,161 @@ local function installOrUpdateConfig(name)
   fs.move(tempPath, targetPath)
 
   if existed then
-    print("Updated " .. name)
+    print("Updated " .. label)
   else
-    print("Installed " .. name)
+    print("Installed " .. label)
   end
 end
 
-local targets = {}
+local function makeBootstrapJob(name, entry)
+  return {
+    kind = "bootstrap",
+    name = name,
+    label = "bootstrap:" .. name,
+    targetPath = entry.target or ("/" .. (entry.file or (name .. ".lua"))),
+    entry = entry,
+    needsDisk = false,
+  }
+end
+
+local function makeProgramJob(appName, app, name, entry)
+  local diskDir = app.disk_dir or ("apps/" .. appName)
+  local fileName = entry.file or (name .. ".lua")
+  return {
+    kind = "program",
+    name = appName .. ":" .. name,
+    label = appName .. ":" .. name,
+    targetPath = joinPath(DISK_MOUNT, joinPath(diskDir, fileName)),
+    entry = entry,
+    needsDisk = true,
+  }
+end
+
+local function makeConfigJob(appName, name, entry)
+  return {
+    kind = "config",
+    name = appName .. ":" .. name,
+    label = appName .. ":" .. name,
+    targetPath = entry.target or ("/" .. (entry.file or (name .. ".lua"))),
+    entry = entry,
+    needsDisk = false,
+  }
+end
+
+local function extendWithAppJobs(jobs, appName)
+  local app = APPS[appName]
+  if not app then
+    error("Unknown app: " .. tostring(appName))
+  end
+
+  for _, name in ipairs(sortedKeys(app.programs or {})) do
+    jobs[#jobs + 1] = makeProgramJob(appName, app, name, app.programs[name])
+  end
+
+  for _, name in ipairs(sortedKeys(app.configs or {})) do
+    jobs[#jobs + 1] = makeConfigJob(appName, name, app.configs[name])
+  end
+end
+
+local function resolveTarget(arg)
+  local jobs = {}
+
+  if BOOTSTRAP[arg] then
+    jobs[#jobs + 1] = makeBootstrapJob(arg, BOOTSTRAP[arg])
+    return jobs
+  end
+
+  if APPS[arg] then
+    extendWithAppJobs(jobs, arg)
+    return jobs
+  end
+
+  local appName, targetName = string.match(arg, "^([^:]+):(.+)$")
+  if not appName or not targetName then
+    error("Unknown target: " .. tostring(arg))
+  end
+
+  local app = APPS[appName]
+  if not app then
+    error("Unknown app: " .. tostring(appName))
+  end
+
+  if app.programs and app.programs[targetName] then
+    jobs[#jobs + 1] = makeProgramJob(appName, app, targetName, app.programs[targetName])
+    return jobs
+  end
+
+  if app.configs and app.configs[targetName] then
+    jobs[#jobs + 1] = makeConfigJob(appName, targetName, app.configs[targetName])
+    return jobs
+  end
+
+  error("Unknown target '" .. targetName .. "' in app '" .. appName .. "'")
+end
+
+local function usage()
+  print("Usage:")
+  print("  updater all")
+  print("  updater <app>")
+  print("  updater <app>:<target>")
+  print("  updater <bootstrap>")
+  print("")
+
+  if next(BOOTSTRAP) then
+    print("Bootstrap targets:")
+    for _, name in ipairs(sortedKeys(BOOTSTRAP)) do
+      local entry = BOOTSTRAP[name]
+      print("  " .. name .. " -> " .. (entry.target or ("/" .. (entry.file or (name .. ".lua")))))
+    end
+    print("")
+  end
+
+  print("Apps:")
+  for _, appName in ipairs(sortedKeys(APPS)) do
+    local app = APPS[appName]
+    print("  " .. appName .. " -> " .. (app.label or appName))
+
+    for _, name in ipairs(sortedKeys(app.programs or {})) do
+      local entry = app.programs[name]
+      local diskDir = app.disk_dir or ("apps/" .. appName)
+      local fileName = entry.file or (name .. ".lua")
+      print("    " .. appName .. ":" .. name .. " -> " .. joinPath(DISK_MOUNT, joinPath(diskDir, fileName)))
+    end
+
+    for _, name in ipairs(sortedKeys(app.configs or {})) do
+      local entry = app.configs[name]
+      print("    " .. appName .. ":" .. name .. " -> " .. (entry.target or ("/" .. (entry.file or (name .. ".lua")))))
+    end
+  end
+end
+
+if #args == 0 then
+  usage()
+  return
+end
+
+local jobs = {}
 
 if #args == 1 and args[1] == "all" then
-  targets = sortedKeys(PROGRAMS)
-  for _, name in ipairs(sortedKeys(CONFIGS)) do
-    targets[#targets + 1] = name
+  for _, name in ipairs(sortedKeys(BOOTSTRAP)) do
+    jobs[#jobs + 1] = makeBootstrapJob(name, BOOTSTRAP[name])
+  end
+
+  for _, appName in ipairs(sortedKeys(APPS)) do
+    extendWithAppJobs(jobs, appName)
   end
 else
   for i = 1, #args do
-    targets[#targets + 1] = args[i]
+    local resolved = resolveTarget(args[i])
+    for _, job in ipairs(resolved) do
+      jobs[#jobs + 1] = job
+    end
   end
 end
 
 local needsDisk = false
-for i = 1, #targets do
-  if PROGRAMS[targets[i]] then
+for _, job in ipairs(jobs) do
+  if job.needsDisk then
     needsDisk = true
     break
   end
@@ -251,14 +301,8 @@ if needsDisk then
   ensureDiskMounted()
 end
 
-for i = 1, #targets do
-  if PROGRAMS[targets[i]] then
-    installOrUpdateOne(targets[i])
-  elseif CONFIGS[targets[i]] then
-    installOrUpdateConfig(targets[i])
-  else
-    error("Unknown install target: " .. tostring(targets[i]))
-  end
+for _, job in ipairs(jobs) do
+  installEntry(job.label, job.targetPath, job.entry)
 end
 
 print("")

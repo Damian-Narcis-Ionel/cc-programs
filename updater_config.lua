@@ -6,45 +6,55 @@ return {
     branch = "main",
   },
 
-  programs = {
-    labels = {
-      file = "labels.lua",
-      path = "labels.lua",
-    },
-
-    setup_storage = {
-      file = "setup_storage.lua",
-      path = "setup_storage.lua",
-    },
-
-    sorter = {
-      file = "sorter.lua",
-      path = "sorter.lua",
-    },
-
-    dashboard = {
-      file = "dashboard.lua",
-      path = "dashboard.lua",
-    },
-
+  bootstrap = {
     updater = {
       file = "updater.lua",
       path = "updater.lua",
+      target = "/updater.lua",
     },
-  },
 
-  configs = {
     updater_config = {
       file = "updater_config.lua",
       path = "updater_config.lua",
       target = "/updater_config.lua",
     },
+  },
 
-    sorter_config = {
-      file = "sorter_config.lua",
-      path = "sorter_config.lua",
-      target = "/sorter_config.lua",
-      preserve_existing = true,
+  apps = {
+    storage = {
+      label = "Storage System",
+      disk_dir = "apps/storage",
+
+      programs = {
+        dashboard = {
+          file = "dashboard.lua",
+          path = "apps/storage/dashboard.lua",
+        },
+
+        labels = {
+          file = "labels.lua",
+          path = "apps/storage/labels.lua",
+        },
+
+        setup_storage = {
+          file = "setup_storage.lua",
+          path = "apps/storage/setup_storage.lua",
+        },
+
+        sorter = {
+          file = "sorter.lua",
+          path = "apps/storage/sorter.lua",
+        },
+      },
+
+      configs = {
+        sorter_config = {
+          file = "sorter_config.lua",
+          path = "configs/storage/sorter_config.lua",
+          target = "/sorter_config.lua",
+          preserve_existing = true,
+        },
+      },
     },
-  }
+  },
 }
