@@ -4,18 +4,58 @@ if type(CFG) ~= "table" then
   error("sorter_config.lua did not return a table")
 end
 
-if not CFG.monitors or not CFG.monitors.dashboard then
-  error("Missing CFG.monitors.dashboard")
+if not CFG.monitors then
+  error("Missing CFG.monitors")
 end
 
 if not CFG.categories or type(CFG.categories) ~= "table" then
   error("Missing CFG.categories")
 end
 
-local monitorName = CFG.monitors.dashboard
-local monitor = peripheral.wrap(monitorName)
-if not monitor then
-  error("Dashboard monitor not found: " .. tostring(monitorName))
+local function getDashboardNames(monitors)
+  local out = {}
+  local seen = {}
+
+  if type(monitors.dashboards) == "table" then
+    for _, name in ipairs(monitors.dashboards) do
+      if type(name) == "string" and name ~= "" and not seen[name] then
+        out[#out + 1] = name
+        seen[name] = true
+      end
+    end
+  end
+
+  if #out == 0 and type(monitors.dashboard) == "string" and monitors.dashboard ~= "" then
+    out[#out + 1] = monitors.dashboard
+  end
+
+  if #out == 0 then
+    error("Missing CFG.monitors.dashboard or CFG.monitors.dashboards")
+  end
+
+  return out
+end
+
+local dashboardNames = getDashboardNames(CFG.monitors)
+local dashboardStates = {}
+
+for _, monitorName in ipairs(dashboardNames) do
+  local monitor = peripheral.wrap(monitorName)
+  if not monitor then
+    error("Dashboard monitor not found: " .. tostring(monitorName))
+  end
+
+  dashboardStates[#dashboardStates + 1] = {
+    name = monitorName,
+    term = monitor,
+    render = {
+      width = nil,
+      height = nil,
+      page = nil,
+      rows = {},
+      frameDrawn = false,
+    },
+  }
 end
 
 local REFRESH_SECONDS = 2
@@ -44,55 +84,40 @@ do
   end
 end
 
-local renderState = {
-  width = nil,
-  height = nil,
-  page = nil,
-  rows = {},
-  frameDrawn = false
-}
-
 local function chooseTextScale()
   return 1
 end
 
-local function setScaleAndGetSize()
-  monitor.setTextScale(chooseTextScale())
-  return monitor.getSize()
+local function setScaleAndGetSize(termObj)
+  termObj.setTextScale(chooseTextScale())
+  return termObj.getSize()
 end
 
-local function writeAt(x, y, text, fg, bg)
-  if fg then monitor.setTextColor(fg) end
-  if bg then monitor.setBackgroundColor(bg) end
-  monitor.setCursorPos(x, y)
-  monitor.write(text)
+local function writeAt(termObj, x, y, text, fg, bg)
+  if fg then termObj.setTextColor(fg) end
+  if bg then termObj.setBackgroundColor(bg) end
+  termObj.setCursorPos(x, y)
+  termObj.write(text)
 end
 
-local function clearLine(y, bg)
-  local w = select(1, monitor.getSize())
-  monitor.setBackgroundColor(bg or colors.black)
-  monitor.setCursorPos(1, y)
-  monitor.write(string.rep(" ", w))
-end
-
-local function fillRect(x, y, w, h, bg)
-  monitor.setBackgroundColor(bg or colors.black)
+local function fillRect(termObj, x, y, w, h, bg)
+  termObj.setBackgroundColor(bg or colors.black)
   for yy = y, y + h - 1 do
-    monitor.setCursorPos(x, yy)
-    monitor.write(string.rep(" ", w))
+    termObj.setCursorPos(x, yy)
+    termObj.write(string.rep(" ", w))
   end
 end
 
-local function centerText(y, text, fg, bg)
-  local w = select(1, monitor.getSize())
+local function centerText(termObj, y, text, fg, bg)
+  local w = select(1, termObj.getSize())
   local x = math.max(1, math.floor((w - #text) / 2) + 1)
-  writeAt(x, y, text, fg or colors.white, bg or colors.black)
+  writeAt(termObj, x, y, text, fg or colors.white, bg or colors.black)
 end
 
-local function rightText(y, text, fg, bg, margin)
-  local w = select(1, monitor.getSize())
+local function rightText(termObj, y, text, fg, bg, margin)
+  local w = select(1, termObj.getSize())
   local x = math.max(1, w - #text - (margin or 2) + 1)
-  writeAt(x, y, text, fg or colors.white, bg or colors.black)
+  writeAt(termObj, x, y, text, fg or colors.white, bg or colors.black)
 end
 
 local function clip(text, maxLen)
@@ -130,36 +155,36 @@ local function pickColor(percent)
   end
 end
 
-local function drawRule(y)
-  local w = select(1, monitor.getSize())
-  writeAt(2, y, string.rep("-", math.max(1, w - 3)), colors.gray, colors.black)
+local function drawRule(termObj, y)
+  local w = select(1, termObj.getSize())
+  writeAt(termObj, 2, y, string.rep("-", math.max(1, w - 3)), colors.gray, colors.black)
 end
 
-local function drawBar(x, y, w, percent, fillColor, emptyColor)
+local function drawBar(termObj, x, y, w, percent, fillColor, emptyColor)
   local p = math.max(0, math.min(1, percent or 0))
   local filled = math.floor(w * p + 0.5)
 
   if filled > 0 then
-    writeAt(x, y, string.rep(" ", filled), colors.white, fillColor)
+    writeAt(termObj, x, y, string.rep(" ", filled), colors.white, fillColor)
   end
   if filled < w then
-    writeAt(x + filled, y, string.rep(" ", w - filled), colors.white, emptyColor or colors.gray)
+    writeAt(termObj, x + filled, y, string.rep(" ", w - filled), colors.white, emptyColor or colors.gray)
   end
 end
 
-local function drawSplash(progress, current, total, label)
-  local w, h = monitor.getSize()
-  monitor.setBackgroundColor(colors.black)
-  monitor.setTextColor(colors.white)
-  monitor.clear()
+local function drawSplash(termObj, progress, current, total, label)
+  local w, h = termObj.getSize()
+  termObj.setBackgroundColor(colors.black)
+  termObj.setTextColor(colors.white)
+  termObj.clear()
 
   local titleY = math.max(2, math.floor(h / 2) - 3)
   local textY = titleY + 2
   local barY = textY + 2
   local infoY = barY + 2
 
-  centerText(titleY, "Storage Dashboard", colors.cyan, colors.black)
-  centerText(textY, "Scanning storage...", colors.lightGray, colors.black)
+  centerText(termObj, titleY, "Storage Dashboard", colors.cyan, colors.black)
+  centerText(termObj, textY, "Scanning storage...", colors.lightGray, colors.black)
 
   local barW = math.max(10, math.min(w - 10, 40))
   local barX = math.floor((w - barW) / 2) + 1
@@ -167,23 +192,22 @@ local function drawSplash(progress, current, total, label)
   local p = math.max(0, math.min(1, progress or 0))
   local filled = math.floor(barW * p + 0.5)
 
-  writeAt(barX - 1, barY, "[", colors.gray, colors.black)
-  writeAt(barX + barW, barY, "]", colors.gray, colors.black)
+  writeAt(termObj, barX - 1, barY, "[", colors.gray, colors.black)
+  writeAt(termObj, barX + barW, barY, "]", colors.gray, colors.black)
 
   if filled > 0 then
-    writeAt(barX, barY, string.rep(" ", filled), colors.white, colors.lime)
+    writeAt(termObj, barX, barY, string.rep(" ", filled), colors.white, colors.lime)
   end
   if filled < barW then
-    writeAt(barX + filled, barY, string.rep(" ", barW - filled), colors.white, colors.gray)
+    writeAt(termObj, barX + filled, barY, string.rep(" ", barW - filled), colors.white, colors.gray)
   end
 
-  local pctText = fmtPercent(p)
-  centerText(infoY, ("%d/%d  (%s)"):format(current or 0, total or 0, pctText), colors.white, colors.black)
+  centerText(termObj, infoY, ("%d/%d  (%s)"):format(current or 0, total or 0, fmtPercent(p)), colors.white, colors.black)
 
   if label and label ~= "" then
-    centerText(infoY + 2, clip(label, math.max(10, w - 4)), colors.gray, colors.black)
+    centerText(termObj, infoY + 2, clip(label, math.max(10, w - 4)), colors.gray, colors.black)
   elseif CFG.chests and CFG.chests.input then
-    centerText(infoY + 2, "Input: " .. tostring(CFG.chests.input), colors.gray, colors.black)
+    centerText(termObj, infoY + 2, "Input: " .. tostring(CFG.chests.input), colors.gray, colors.black)
   end
 end
 
@@ -193,7 +217,7 @@ local function scanChestMeta(name)
       present = false,
       inv = nil,
       totalSlots = 0,
-      maxItems = 0
+      maxItems = 0,
     }
     return chestMeta[name]
   end
@@ -206,13 +230,11 @@ local function scanChestMeta(name)
     firstSlotLimit = inv.getItemLimit(1) or 0
   end
 
-  local maxItems = totalSlots * firstSlotLimit
-
   chestMeta[name] = {
     present = true,
     inv = inv,
     totalSlots = totalSlots,
-    maxItems = maxItems
+    maxItems = totalSlots * firstSlotLimit,
   }
 
   return chestMeta[name]
@@ -244,7 +266,7 @@ local function getChestUsage(name)
       usedItems = 0,
       usedSlots = 0,
       totalSlots = 0,
-      maxItems = 0
+      maxItems = 0,
     }
   end
 
@@ -260,7 +282,7 @@ local function getChestUsage(name)
         usedItems = 0,
         usedSlots = 0,
         totalSlots = 0,
-        maxItems = 0
+        maxItems = 0,
       }
     end
     items = meta.inv.list()
@@ -279,7 +301,7 @@ local function getChestUsage(name)
     usedItems = usedItems,
     usedSlots = usedSlots,
     totalSlots = meta.totalSlots,
-    maxItems = meta.maxItems
+    maxItems = meta.maxItems,
   }
 end
 
@@ -291,16 +313,16 @@ local function getCategoryStats(category)
   local missing = 0
 
   for _, chestName in ipairs(category.chests or {}) do
-    local s = getChestUsage(chestName)
+    local usage = getChestUsage(chestName)
 
-    if not s.present then
+    if not usage.present then
       missing = missing + 1
     end
 
-    usedItems = usedItems + s.usedItems
-    maxItems = maxItems + s.maxItems
-    usedSlots = usedSlots + s.usedSlots
-    totalSlots = totalSlots + s.totalSlots
+    usedItems = usedItems + usage.usedItems
+    maxItems = maxItems + usage.maxItems
+    usedSlots = usedSlots + usage.usedSlots
+    totalSlots = totalSlots + usage.totalSlots
   end
 
   local slotFullness = 0
@@ -324,7 +346,7 @@ local function getCategoryStats(category)
     totalSlots = totalSlots,
     freeSlots = math.max(0, totalSlots - usedSlots),
     slotFullness = slotFullness,
-    itemFullness = itemFullness
+    itemFullness = itemFullness,
   }
 end
 
@@ -333,8 +355,7 @@ local function getRowsPerPage()
 end
 
 local function getPageCount()
-  local rowsPerPage = getRowsPerPage()
-  return math.max(1, math.ceil(#categoryList / rowsPerPage))
+  return math.max(1, math.ceil(#categoryList / getRowsPerPage()))
 end
 
 local function getPageCategories(page)
@@ -349,8 +370,8 @@ local function getPageCategories(page)
   return out
 end
 
-local function getRowLayout(rowCount)
-  local _, h = monitor.getSize()
+local function getRowLayout(termObj, rowCount)
+  local _, h = termObj.getSize()
   local top = 4
   local bottom = h - 1
   local areaH = bottom - top + 1
@@ -409,7 +430,7 @@ local function buildDisplayRow(stats)
     infoRight = line2Right,
     status = status,
     barPercent = math.floor(stats.slotFullness * 1000 + 0.5) / 1000,
-    barColor = pickColor(stats.slotFullness)
+    barColor = pickColor(stats.slotFullness),
   }
 end
 
@@ -426,68 +447,82 @@ local function rowsEqual(a, b)
     a.barColor == b.barColor
 end
 
-local function drawNavButtons(page, pageCount)
+local function drawNavButtons(termObj, pageCount)
   if pageCount <= 1 then
     return
   end
 
-  local w, h = monitor.getSize()
-
-  writeAt(2, h, "< Prev", colors.black, colors.lightGray)
-  local nextX = math.max(2, w - 6)
-  writeAt(nextX, h, "Next >", colors.black, colors.lightGray)
+  local w, h = termObj.getSize()
+  writeAt(termObj, 2, h, "< Prev", colors.black, colors.lightGray)
+  writeAt(termObj, math.max(2, w - 6), h, "Next >", colors.black, colors.lightGray)
 end
 
-local function drawFrame(page, pageCount)
-  local _, h = monitor.getSize()
+local function drawFrame(termObj, page, pageCount)
+  local _, h = termObj.getSize()
 
-  monitor.setBackgroundColor(colors.black)
-  monitor.setTextColor(colors.white)
-  monitor.clear()
+  termObj.setBackgroundColor(colors.black)
+  termObj.setTextColor(colors.white)
+  termObj.clear()
 
-  centerText(1, "Storage Dashboard", colors.cyan, colors.black)
+  centerText(termObj, 1, "Storage Dashboard", colors.cyan, colors.black)
 
   local subtitle = "Input: " .. tostring(CFG.chests and CFG.chests.input or "?")
   if pageCount > 1 then
     subtitle = subtitle .. "   Page " .. page .. "/" .. pageCount
   end
-  centerText(2, subtitle, colors.lightGray, colors.black)
+  centerText(termObj, 2, subtitle, colors.lightGray, colors.black)
 
-  writeAt(2, 2, "Bar=slots  Text=items", colors.gray, colors.black)
-  drawNavButtons(page, pageCount)
-  drawRule(3)
-  writeAt(2, 1, "Cats on page: " .. tostring(#getPageCategories(page)), colors.white, colors.black)
+  writeAt(termObj, 2, 2, "Bar=slots  Text=items", colors.gray, colors.black)
+  drawNavButtons(termObj, pageCount)
+  drawRule(termObj, 3)
+  writeAt(termObj, 2, 1, "Cats on page: " .. tostring(#getPageCategories(page)), colors.white, colors.black)
 end
 
-local function drawCategoryRow(displayRow, row)
-  local w = select(1, monitor.getSize())
+local function drawNoPage(termObj, pageCount)
+  local _, h = termObj.getSize()
+
+  termObj.setBackgroundColor(colors.black)
+  termObj.setTextColor(colors.white)
+  termObj.clear()
+
+  centerText(termObj, 1, "Storage Dashboard", colors.cyan, colors.black)
+  centerText(termObj, 2, "No more category pages", colors.lightGray, colors.black)
+  if pageCount > 0 then
+    centerText(termObj, 4, ("Total pages: %d"):format(pageCount), colors.white, colors.black)
+  end
+  drawNavButtons(termObj, pageCount)
+  centerText(termObj, h, "Use Prev/Next to change page pair", colors.gray, colors.black)
+end
+
+local function drawCategoryRow(termObj, displayRow, row)
+  local w = select(1, termObj.getSize())
   local left = 3
   local right = w - 2
   local barW = math.max(10, right - left + 1)
 
-  fillRect(1, row.y, w, row.h, colors.black)
+  fillRect(termObj, 1, row.y, w, row.h, colors.black)
 
-  writeAt(left, row.y, clip(displayRow.label, math.max(8, barW - #displayRow.percentText - 2)), colors.white, colors.black)
-  rightText(row.y, displayRow.percentText, colors.white, colors.black, 2)
+  writeAt(termObj, left, row.y, clip(displayRow.label, math.max(8, barW - #displayRow.percentText - 2)), colors.white, colors.black)
+  rightText(termObj, row.y, displayRow.percentText, colors.white, colors.black, 2)
 
   local leftMax = math.max(10, math.floor((w - 6) * 0.52))
   local rightMax = math.max(10, (w - 6) - leftMax)
 
-  writeAt(left, row.y + 1, clip(displayRow.infoLeft, leftMax), colors.lightGray, colors.black)
-  rightText(row.y + 1, clip(displayRow.infoRight, rightMax), colors.lightGray, colors.black, 2)
+  writeAt(termObj, left, row.y + 1, clip(displayRow.infoLeft, leftMax), colors.lightGray, colors.black)
+  rightText(termObj, row.y + 1, clip(displayRow.infoRight, rightMax), colors.lightGray, colors.black, 2)
 
-  drawBar(left, row.y + 2, barW, displayRow.barPercent, displayRow.barColor, colors.gray)
-  writeAt(left, row.y + 3, clip(displayRow.status, barW), colors.gray, colors.black)
+  drawBar(termObj, left, row.y + 2, barW, displayRow.barPercent, displayRow.barColor, colors.gray)
+  writeAt(termObj, left, row.y + 3, clip(displayRow.status, barW), colors.gray, colors.black)
 end
 
-local function clearUnusedRows(oldRows, newCount, rowLayout)
+local function clearUnusedRows(termObj, oldRows, newCount, rowLayout)
   if not oldRows then return end
-  local w = select(1, monitor.getSize())
+  local w = select(1, termObj.getSize())
 
   for i = newCount + 1, #oldRows do
     local row = rowLayout[i]
     if row then
-      fillRect(1, row.y, w, row.h, colors.black)
+      fillRect(termObj, 1, row.y, w, row.h, colors.black)
     end
   end
 end
@@ -508,7 +543,9 @@ local function scanAllChests()
   local total = #ordered
 
   if total == 0 then
-    drawSplash(1, 0, 0, "No storage chests configured")
+    for _, state in ipairs(dashboardStates) do
+      drawSplash(state.term, 1, 0, 0, "No storage chests configured")
+    end
     return
   end
 
@@ -516,13 +553,17 @@ local function scanAllChests()
 
   for i = 1, preloadCount do
     local chestName = ordered[i]
-    drawSplash((i - 1) / preloadCount, i - 1, preloadCount, chestName)
+    for _, state in ipairs(dashboardStates) do
+      drawSplash(state.term, (i - 1) / preloadCount, i - 1, preloadCount, chestName)
+    end
     scanChestMeta(chestName)
-    drawSplash(i / preloadCount, i, preloadCount, chestName)
+    for _, state in ipairs(dashboardStates) do
+      drawSplash(state.term, i / preloadCount, i, preloadCount, chestName)
+    end
   end
 end
 
-local function fullRedrawNeeded(w, h, page)
+local function fullRedrawNeeded(renderState, w, h, page)
   return
     not renderState.frameDrawn or
     renderState.width ~= w or
@@ -530,78 +571,124 @@ local function fullRedrawNeeded(w, h, page)
     renderState.page ~= page
 end
 
-local function handleTouch(side, x, y, pageCount)
-  if side ~= monitorName then
-    return false
+local function renderPageOnMonitor(state, page, pageCount)
+  local termObj = state.term
+  local renderState = state.render
+  local w, h = setScaleAndGetSize(termObj)
+
+  if page > pageCount then
+    drawNoPage(termObj, pageCount)
+    renderState.width = w
+    renderState.height = h
+    renderState.page = page
+    renderState.rows = {}
+    renderState.frameDrawn = true
+    return
   end
 
+  local mustFullRedraw = fullRedrawNeeded(renderState, w, h, page)
+  local categories = getPageCategories(page)
+  local rowLayout = getRowLayout(termObj, #categories)
+  local newRows = {}
+
+  if mustFullRedraw then
+    drawFrame(termObj, page, pageCount)
+  end
+
+  for i, category in ipairs(categories) do
+    local displayRow = buildDisplayRow(getCategoryStats(category))
+    newRows[i] = displayRow
+
+    if mustFullRedraw or not rowsEqual(renderState.rows[i], displayRow) then
+      drawCategoryRow(termObj, displayRow, rowLayout[i])
+    end
+  end
+
+  clearUnusedRows(termObj, renderState.rows, #newRows, rowLayout)
+
+  renderState.width = w
+  renderState.height = h
+  renderState.page = page
+  renderState.rows = newRows
+  renderState.frameDrawn = true
+end
+
+local function getPagesPerView()
+  return math.max(1, #dashboardStates)
+end
+
+local function getLastPageGroupStart(pageCount)
+  local pagesPerView = getPagesPerView()
+  return math.max(1, (math.floor((pageCount - 1) / pagesPerView) * pagesPerView) + 1)
+end
+
+local function invalidateAllFrames()
+  for _, state in ipairs(dashboardStates) do
+    state.render.frameDrawn = false
+  end
+end
+
+local function handleTouch(side, x, y, pageCount)
   if pageCount <= 1 then
     return false
   end
 
-  local w = select(1, monitor.getSize())
-  local _, h = monitor.getSize()
+  local touchedState = nil
+  for _, state in ipairs(dashboardStates) do
+    if state.name == side then
+      touchedState = state
+      break
+    end
+  end
+
+  if not touchedState then
+    return false
+  end
+
+  local w = select(1, touchedState.term.getSize())
+  local _, h = touchedState.term.getSize()
 
   if y == h and x >= 2 and x <= 7 then
-    currentPage = currentPage - 1
+    currentPage = currentPage - getPagesPerView()
     if currentPage < 1 then
-      currentPage = pageCount
+      currentPage = getLastPageGroupStart(pageCount)
     end
-    renderState.frameDrawn = false
+    invalidateAllFrames()
     return true
   end
 
   local nextX = math.max(2, w - 6)
   if y == h and x >= nextX and x <= w then
-    currentPage = currentPage + 1
+    currentPage = currentPage + getPagesPerView()
     if currentPage > pageCount then
       currentPage = 1
     end
-    renderState.frameDrawn = false
+    invalidateAllFrames()
     return true
   end
 
   return false
 end
 
-setScaleAndGetSize()
-drawSplash(0, 0, 1, "Preparing scan...")
+for _, state in ipairs(dashboardStates) do
+  setScaleAndGetSize(state.term)
+  drawSplash(state.term, 0, 0, 1, "Preparing scan...")
+end
+
 scanAllChests()
 sleep(SPLASH_SECONDS)
 print("Dashboard is active !")
 
 while true do
-  local w, h = setScaleAndGetSize()
   local pageCount = getPageCount()
 
   if currentPage > pageCount then
     currentPage = 1
   end
 
-  local mustFullRedraw = fullRedrawNeeded(w, h, currentPage)
-  local categories = getPageCategories(currentPage)
-  local rowLayout = getRowLayout(#categories)
-  local newRows = {}
-
-  if mustFullRedraw then
-    drawFrame(currentPage, pageCount)
+  for index, state in ipairs(dashboardStates) do
+    renderPageOnMonitor(state, currentPage + (index - 1), pageCount)
   end
-
-  for i, category in ipairs(categories) do
-    local stats = getCategoryStats(category)
-    local displayRow = buildDisplayRow(stats)
-    newRows[i] = displayRow
-
-    if mustFullRedraw or not rowsEqual(renderState.rows[i], displayRow) then
-      drawCategoryRow(displayRow, rowLayout[i])
-    end
-  end
-
-  renderState.width = w
-  renderState.height = h
-  renderState.page = currentPage
-  renderState.rows = newRows
-  renderState.frameDrawn = true
 
   local timer = os.startTimer(REFRESH_SECONDS)
 
@@ -612,14 +699,8 @@ while true do
       break
     end
 
-    if event == "monitor_touch" then
-      local touchedMonitor = p1
-      local x = p2
-      local y = p3
-
-      if handleTouch(touchedMonitor, x, y, pageCount) then
-        break
-      end
+    if event == "monitor_touch" and handleTouch(p1, p2, p3, pageCount) then
+      break
     end
   end
 end

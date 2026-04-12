@@ -48,6 +48,11 @@ local chests = {
 }
 
 monitors = {
+  dashboards = {
+    "monitor_1",
+    "monitor_12",
+  },
+
   dashboard = "monitor_1",
 
   stone = "monitor_2",

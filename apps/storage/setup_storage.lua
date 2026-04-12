@@ -84,20 +84,6 @@ local function sortedPeripheralNames()
   return names
 end
 
-local function detectDashboardMonitor(cfg)
-  if cfg and cfg.monitors and type(cfg.monitors.dashboard) == "string" and isMonitor(cfg.monitors.dashboard) then
-    return cfg.monitors.dashboard
-  end
-
-  for _, name in ipairs(sortedPeripheralNames()) do
-    if isMonitor(name) then
-      return name
-    end
-  end
-
-  error("No monitor peripheral found for setup.")
-end
-
 local function collectInventories()
   local out = {}
   for _, name in ipairs(sortedPeripheralNames()) do
@@ -116,6 +102,43 @@ local function collectMonitors()
     end
   end
   return out
+end
+
+local function getConfiguredDashboardMonitors(cfg)
+  local out = {}
+  local seen = {}
+
+  if cfg and type(cfg.monitors) == "table" then
+    if type(cfg.monitors.dashboards) == "table" then
+      for _, name in ipairs(cfg.monitors.dashboards) do
+        if type(name) == "string" and isMonitor(name) and not seen[name] then
+          out[#out + 1] = name
+          seen[name] = true
+        end
+      end
+    end
+
+    if #out == 0 and type(cfg.monitors.dashboard) == "string" and isMonitor(cfg.monitors.dashboard) then
+      out[#out + 1] = cfg.monitors.dashboard
+    end
+  end
+
+  return out
+end
+
+local function detectDashboardMonitors(cfg)
+  local configured = getConfiguredDashboardMonitors(cfg)
+  if #configured > 0 then
+    return configured[1], configured
+  end
+
+  for _, name in ipairs(sortedPeripheralNames()) do
+    if isMonitor(name) then
+      return name, { name }
+    end
+  end
+
+  error("No monitor peripheral found for setup.")
 end
 
 local function makeCategoryState(cfg)
@@ -159,20 +182,22 @@ local function makeCategoryState(cfg)
   return categories
 end
 
-local function makeMonitorsState(cfg, dashboardMonitor)
-  local monitors = {
-    dashboard = dashboardMonitor,
-  }
+local function makeMonitorsState(cfg, dashboardMonitors)
+  local monitors = {}
 
   if cfg and type(cfg.monitors) == "table" then
     for key, value in pairs(cfg.monitors) do
-      if type(key) == "string" and type(value) == "string" then
+      if type(key) == "string" and key ~= "dashboard" and key ~= "dashboards" and type(value) == "string" then
         monitors[key] = value
       end
     end
   end
 
-  monitors.dashboard = dashboardMonitor
+  monitors.dashboard = dashboardMonitors[1]
+  monitors.dashboards = {}
+  for i, name in ipairs(dashboardMonitors) do
+    monitors.dashboards[i] = name
+  end
   return monitors
 end
 
@@ -256,9 +281,18 @@ local function writeConfigFile(state)
   lines[#lines + 1] = ""
   lines[#lines + 1] = "local monitors = {"
 
+  lines[#lines + 1] = "  dashboards = {"
+  for _, name in ipairs(state.dashboardMonitors) do
+    lines[#lines + 1] = "    " .. quoteLua(name) .. ","
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  dashboard = " .. quoteLua(state.dashboardMonitors[1]) .. ","
+
   local monitorKeys = {}
-  for key in pairs(state.monitors) do
-    monitorKeys[#monitorKeys + 1] = key
+  for key, value in pairs(state.monitors) do
+    if type(key) == "string" and key ~= "dashboard" and key ~= "dashboards" and type(value) == "string" then
+      monitorKeys[#monitorKeys + 1] = key
+    end
   end
   table.sort(monitorKeys)
 
@@ -301,7 +335,7 @@ local function writeConfigFile(state)
 end
 
 local existingConfig = loadExistingConfig()
-local dashboardMonitorName = detectDashboardMonitor(existingConfig)
+local dashboardMonitorName, detectedDashboardMonitors = detectDashboardMonitors(existingConfig)
 local monitor = peripheral.wrap(dashboardMonitorName)
 local allInventories = collectInventories()
 local allMonitors = collectMonitors()
@@ -312,19 +346,39 @@ end
 
 local state = {
   monitorName = dashboardMonitorName,
-  monitors = makeMonitorsState(existingConfig, dashboardMonitorName),
+  dashboardMonitors = detectedDashboardMonitors,
+  monitors = makeMonitorsState(existingConfig, detectedDashboardMonitors),
   categories = makeCategoryState(existingConfig),
   inputName = nil,
   mode = "input",
   currentIndex = 1,
   categoryPage = 1,
   activeCategoryKey = nil,
+  pendingDashboardIndex = nil,
   pendingMonitorCategoryKey = nil,
   message = "Touch buttons on the monitor to configure storage.",
   history = {},
   baseline = {},
   saved = false,
 }
+
+local function syncDashboardMonitors()
+  local dashboards = { state.monitorName }
+  if type(state.dashboardMonitors[2]) == "string"
+    and state.dashboardMonitors[2] ~= ""
+    and state.dashboardMonitors[2] ~= state.monitorName then
+    dashboards[2] = state.dashboardMonitors[2]
+  end
+
+  state.dashboardMonitors = dashboards
+  state.monitors.dashboard = dashboards[1]
+  state.monitors.dashboards = {}
+  for i, name in ipairs(dashboards) do
+    state.monitors.dashboards[i] = name
+  end
+end
+
+syncDashboardMonitors()
 
 if existingConfig and existingConfig.chests and type(existingConfig.chests.input) == "string" and inventorySet[existingConfig.chests.input] then
   state.inputName = existingConfig.chests.input
@@ -358,12 +412,38 @@ local function categoryByKey(key)
   return nil
 end
 
+local function categoryForMonitor(monitorName)
+  for _, category in ipairs(state.categories) do
+    if state.monitors[category.key] == monitorName then
+      return category
+    end
+  end
+  return nil
+end
+
 local function monitorLabelForCategory(categoryKey)
   local name = state.monitors[categoryKey]
   if type(name) == "string" and name ~= "" then
     return name
   end
   return "unassigned"
+end
+
+local function dashboardLabel(index)
+  local name = state.dashboardMonitors[index]
+  if type(name) == "string" and name ~= "" then
+    return name
+  end
+  return "unassigned"
+end
+
+local function isDashboardMonitorName(name)
+  for _, dashboardName in ipairs(state.dashboardMonitors) do
+    if dashboardName == name then
+      return true
+    end
+  end
+  return false
 end
 
 local function assignedSet()
@@ -584,7 +664,7 @@ local function beginMonitorAssignment()
     return
   end
 
-  if #allMonitors <= 1 then
+  if #allMonitors <= #state.dashboardMonitors then
     setMessage("No extra monitor found for labels.")
     return
   end
@@ -592,6 +672,52 @@ local function beginMonitorAssignment()
   local category = categoryByKey(state.activeCategoryKey)
   state.pendingMonitorCategoryKey = state.activeCategoryKey
   setMessage(("Touch the label monitor for %s."):format(category.label))
+end
+
+local function beginSecondaryDashboardAssignment()
+  if #allMonitors <= #state.dashboardMonitors then
+    setMessage("No extra monitor found for dashboard 2.")
+    return
+  end
+
+  state.pendingMonitorCategoryKey = nil
+  state.pendingDashboardIndex = 2
+  setMessage("Touch the second dashboard monitor.")
+end
+
+local function clearSecondaryDashboard()
+  state.dashboardMonitors[2] = nil
+  state.pendingDashboardIndex = nil
+  syncDashboardMonitors()
+  setMessage("Cleared dashboard 2.")
+end
+
+local function assignPendingDashboard(monitorName)
+  if state.pendingDashboardIndex ~= 2 then
+    return false
+  end
+
+  if monitorName == state.monitorName then
+    setMessage("Touch the second dashboard monitor, not the setup monitor.")
+    return true
+  end
+
+  if not isMonitor(monitorName) then
+    setMessage("Touched peripheral is not a monitor.")
+    return true
+  end
+
+  local category = categoryForMonitor(monitorName)
+  if category then
+    setMessage(("Monitor already used as label for %s."):format(category.label))
+    return true
+  end
+
+  state.dashboardMonitors[2] = monitorName
+  state.pendingDashboardIndex = nil
+  syncDashboardMonitors()
+  setMessage(("Assigned dashboard 2: %s"):format(monitorName))
+  return true
 end
 
 local function clearActiveCategoryMonitor()
@@ -614,8 +740,8 @@ local function assignPendingMonitor(monitorName)
     return false
   end
 
-  if monitorName == state.monitorName then
-    setMessage("Touch a label monitor, not the dashboard monitor.")
+  if isDashboardMonitorName(monitorName) then
+    setMessage("Touch a label monitor, not a dashboard monitor.")
     return true
   end
 
@@ -643,6 +769,8 @@ local function startFresh()
   state.currentIndex = 1
   state.categoryPage = 1
   state.activeCategoryKey = nil
+  state.pendingDashboardIndex = nil
+  state.pendingMonitorCategoryKey = nil
   state.history = {}
 
   for _, category in ipairs(state.categories) do
@@ -677,7 +805,7 @@ local function render()
     writeCentered(monitor, 5, state.mode == "input" and "Assign an input chest to continue" or "All detected chests are assigned", colors.gray, colors.black)
   end
 
-  local reservedRows = state.mode == "assign" and 17 or 10
+  local reservedRows = state.mode == "assign" and 20 or 10
   local rowsAvailable = math.max(1, math.floor((h - reservedRows) / 2))
   local pageSize = rowsAvailable * 2
   local pageCount = math.max(1, math.ceil(#state.categories / pageSize))
@@ -690,18 +818,22 @@ local function render()
     local buttonW = math.max(10, math.floor((w - 6) / 2))
     local leftX = 2
     local rightX = leftX + buttonW + 2
-    local y = 7
+    local y = 9
 
     local activeCategory = state.activeCategoryKey and categoryByKey(state.activeCategoryKey) or nil
+    local dashboardsText = ("Dashboards: 1=%s  2=%s"):format(dashboardLabel(1), dashboardLabel(2))
+    local dashboardsColor = state.pendingDashboardIndex and colors.cyan or colors.gray
+    writeCentered(monitor, 6, clip(dashboardsText, w), dashboardsColor, colors.black)
+
     if activeCategory then
       local selectedText = ("Selected: %s (%d/%d)"):format(activeCategory.label, #activeCategory.chests, activeCategory.desired)
-      writeCentered(monitor, 6, clip(selectedText, w), colors.lime, colors.black)
+      writeCentered(monitor, 7, clip(selectedText, w), colors.lime, colors.black)
       local monitorText = "Label monitor: " .. monitorLabelForCategory(activeCategory.key)
       local monitorColor = state.pendingMonitorCategoryKey == activeCategory.key and colors.cyan or colors.gray
-      writeCentered(monitor, 7, clip(monitorText, w), monitorColor, colors.black)
+      writeCentered(monitor, 8, clip(monitorText, w), monitorColor, colors.black)
     else
-      writeCentered(monitor, 6, "Selected: none", colors.yellow, colors.black)
-      writeCentered(monitor, 7, "Label monitor: none", colors.gray, colors.black)
+      writeCentered(monitor, 7, "Selected: none", colors.yellow, colors.black)
+      writeCentered(monitor, 8, "Label monitor: none", colors.gray, colors.black)
     end
 
     for i = pageStart, math.min(#state.categories, pageStart + pageSize - 1) do
@@ -722,6 +854,8 @@ local function render()
       writeCentered(monitor, h - 4, ("Page %d/%d"):format(state.categoryPage, pageCount), colors.white, colors.black)
     end
 
+    drawButton(monitor, buttons, "assign_dashboard_2", 2, h - 17, 14, 2, "Set Dash 2", colors.cyan, colors.black)
+    drawButton(monitor, buttons, "clear_dashboard_2", w - 13, h - 17, 12, 2, "Clear Dash2", colors.gray, colors.black)
     drawButton(monitor, buttons, "clear_category", 2, h - 8, 14, 2, "Clear Chests", colors.red, colors.white)
     drawButton(monitor, buttons, "assign_monitor", math.max(2, math.floor((w - 16) / 2)), h - 8, 16, 2, "Assign Label", colors.cyan, colors.black)
     drawButton(monitor, buttons, "clear_monitor", w - 13, h - 8, 12, 2, "Clear Label", colors.gray, colors.black)
@@ -738,7 +872,14 @@ local function render()
   drawButton(monitor, buttons, "reset", math.max(2, math.floor((w - 14) / 2)), h - 14, 14, 2, "Reset Baseline", colors.gray, colors.black)
   drawButton(monitor, buttons, "start_fresh", w - 13, h - 14, 12, 2, "Start Fresh", colors.red, colors.white)
 
-  local footer = state.pendingMonitorCategoryKey and "Touch a label monitor to assign it" or "Change chests, then tap Find Marked"
+  local footer
+  if state.pendingDashboardIndex then
+    footer = "Touch the second dashboard monitor"
+  elseif state.pendingMonitorCategoryKey then
+    footer = "Touch a label monitor to assign it"
+  else
+    footer = "Change chests, then tap Find Marked"
+  end
   writeCentered(monitor, h, clip(footer, w), colors.lightGray, colors.black)
 
   return buttons
@@ -785,6 +926,10 @@ local function handleButton(id)
     state.categoryPage = state.categoryPage + 1
   elseif id == "clear_category" then
     clearActiveCategory()
+  elseif id == "assign_dashboard_2" then
+    beginSecondaryDashboardAssignment()
+  elseif id == "clear_dashboard_2" then
+    clearSecondaryDashboard()
   elseif id == "assign_monitor" then
     beginMonitorAssignment()
   elseif id == "clear_monitor" then
@@ -804,6 +949,7 @@ local function handleButton(id)
   elseif id == "start_fresh" then
     startFresh()
   elseif string.sub(id, 1, 4) == "cat:" then
+    state.pendingDashboardIndex = nil
     state.pendingMonitorCategoryKey = nil
     state.activeCategoryKey = string.sub(id, 5)
     local category = categoryByKey(state.activeCategoryKey)
@@ -825,7 +971,16 @@ while true do
   local event, p1, p2, p3 = os.pullEvent()
 
   if event == "monitor_touch" then
-    if state.pendingMonitorCategoryKey then
+    if state.pendingDashboardIndex then
+      if assignPendingDashboard(p1) then
+        -- handled dashboard assignment touch
+      elseif p1 == state.monitorName then
+        local id = hitButton(buttons, p2, p3)
+        if id then
+          handleButton(id)
+        end
+      end
+    elseif state.pendingMonitorCategoryKey then
       if assignPendingMonitor(p1) then
         -- handled monitor assignment touch
       elseif p1 == state.monitorName then

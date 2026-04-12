@@ -3,6 +3,7 @@
 The storage app provides:
 - automatic item sorting into storage categories
 - a dashboard monitor with slot-based fullness stats
+- paged dual-dashboard support across two large monitors
 - per-category label monitors
 - an interactive setup flow for chest and label monitor assignment
 
@@ -28,6 +29,20 @@ configs/storage/sorter_config.lua
 ```
 
 `setup_storage.lua` reads and writes `/sorter_config.lua`.
+
+Dashboard monitors are configured in:
+
+```lua
+monitors = {
+  dashboards = {
+    "monitor_left",
+    "monitor_right",
+  },
+  dashboard = "monitor_left",
+}
+```
+
+`dashboard.lua` uses `monitors.dashboards` when present and falls back to `monitors.dashboard` for older configs.
 
 ## Installation
 
@@ -56,6 +71,7 @@ disk/apps/storage/setup_storage.lua
 Workflow:
 - stop the dashboard first if it is running
 - choose the input chest
+- tap `Set Dash 2`, then touch the second big dashboard monitor if you are using one
 - tap a category on the dashboard monitor
 - add or remove one temporary item in one or more chests from that category
 - tap `Find Marked`
@@ -67,3 +83,4 @@ Important:
 - opening a chest is not enough for detection
 - the script identifies a chest by inventory content changes
 - labels only render for categories with assigned monitor mappings
+- with two dashboard monitors, the left screen shows page 1 and the right screen shows page 2, then navigation advances as page pairs

@@ -2,7 +2,7 @@ return {
   disk_mount = "disk",
   github = {
     owner = "Damian-Narcis-Ionel",
-    repo = "cc-storage",
+    repo = "cc-suite",
     branch = "main",
   },
 

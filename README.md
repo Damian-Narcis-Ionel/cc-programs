@@ -37,13 +37,15 @@ Bootstrap files and configs are installed onto the computer itself, for example:
 
 This keeps machine-local state on the computer while allowing portable program disks.
 
+Apps can define their own monitor layouts. The storage app now supports multiple dashboard monitors through `monitors.dashboards`.
+
 ## Updating In Game
 
 Bootstrap the updater on the CC computer:
 
 ```lua
-wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-storage/main/updater.lua /updater.lua
-wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-storage/main/updater_config.lua /updater_config.lua
+wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-suite/main/updater.lua /updater.lua
+wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-suite/main/updater_config.lua /updater_config.lua
 ```
 
 Then install everything:
