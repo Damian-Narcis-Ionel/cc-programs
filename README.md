@@ -44,8 +44,8 @@ Apps can define their own monitor layouts. The storage app now supports multiple
 Bootstrap the updater on the CC computer:
 
 ```lua
-wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-suite/main/updater.lua /updater.lua
-wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-suite/main/updater_config.lua /updater_config.lua
+wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-programs/main/updater.lua /updater.lua
+wget https://raw.githubusercontent.com/Damian-Narcis-Ionel/cc-programs/main/updater_config.lua /updater_config.lua
 ```
 
 Then install everything:
@@ -93,8 +93,8 @@ Mining-specific details live in [apps/mining/README.md](apps/mining/README.md).
 The structure now matches a general program suite more than a storage-only repo, so renaming the repo is reasonable.
 
 Good candidates:
-- `cc-suite`
 - `cc-programs`
 - `cc-tools`
+- `cc-toolkit`
 
 If you rename the remote repo, update the `github.repo` field in [updater_config.lua](updater_config.lua).

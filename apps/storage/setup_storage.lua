@@ -1,4 +1,5 @@
 local CONFIG_PATH = "/sorter_config.lua"
+local args = { ... }
 
 local DEFAULT_CATEGORIES = {
   { key = "stone", label = "Stone", desired = 4 },
@@ -104,6 +105,37 @@ local function collectMonitors()
   return out
 end
 
+local function monitorSortKey(name)
+  local monitor = peripheral.wrap(name)
+  if not monitor then
+    return 0, 0, 0
+  end
+
+  local w, h = monitor.getSize()
+  return (w * h), w, h
+end
+
+local function sortMonitorsByPriority(names)
+  table.sort(names, function(a, b)
+    local areaA, widthA, heightA = monitorSortKey(a)
+    local areaB, widthB, heightB = monitorSortKey(b)
+
+    if areaA ~= areaB then
+      return areaA > areaB
+    end
+
+    if widthA ~= widthB then
+      return widthA > widthB
+    end
+
+    if heightA ~= heightB then
+      return heightA > heightB
+    end
+
+    return a < b
+  end)
+end
+
 local function getConfiguredDashboardMonitors(cfg)
   local out = {}
   local seen = {}
@@ -127,15 +159,37 @@ local function getConfiguredDashboardMonitors(cfg)
 end
 
 local function detectDashboardMonitors(cfg)
+  if type(args[1]) == "string" and args[1] ~= "" then
+    local forced = args[1]
+    if not isMonitor(forced) then
+      error("Requested setup monitor is not available: " .. tostring(forced))
+    end
+
+    local configured = getConfiguredDashboardMonitors(cfg)
+    local dashboards = { forced }
+    for _, name in ipairs(configured) do
+      if name ~= forced then
+        dashboards[#dashboards + 1] = name
+      end
+    end
+
+    return forced, dashboards
+  end
+
   local configured = getConfiguredDashboardMonitors(cfg)
   if #configured > 0 then
     return configured[1], configured
   end
 
-  for _, name in ipairs(sortedPeripheralNames()) do
-    if isMonitor(name) then
-      return name, { name }
+  local monitors = collectMonitors()
+  sortMonitorsByPriority(monitors)
+
+  if #monitors > 0 then
+    local dashboards = { monitors[1] }
+    if #monitors > 1 then
+      dashboards[2] = monitors[2]
     end
+    return dashboards[1], dashboards
   end
 
   error("No monitor peripheral found for setup.")
@@ -961,6 +1015,7 @@ term.clear()
 term.setCursorPos(1, 1)
 print("Storage setup starting.")
 print("Stop the dashboard program first if it is currently using the same monitor.")
+print("Tip: run setup_storage <monitor_name> to force the setup monitor.")
 print("Select a category, then add or remove one temporary item in one or more chests for that category.")
 print("Tap 'Find Marked' to add all changed chests at once. Opening a chest is not enough; the script detects content changes.")
 

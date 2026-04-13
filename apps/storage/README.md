@@ -68,6 +68,12 @@ Run:
 disk/apps/storage/setup_storage.lua
 ```
 
+Or force the setup monitor explicitly:
+
+```lua
+disk/apps/storage/setup_storage.lua monitor_1
+```
+
 Workflow:
 - stop the dashboard first if it is running
 - choose the input chest
