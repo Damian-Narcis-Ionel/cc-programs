@@ -13,6 +13,39 @@ local function centerX(termObj, text)
   return math.max(1, math.floor((w - #text) / 2) + 1)
 end
 
+local function repeatChar(ch, count)
+  if count <= 0 then
+    return ""
+  end
+  return string.rep(ch, count)
+end
+
+local function stretchTextToWidth(text, width)
+  if #text >= width or #text <= 1 then
+    return text
+  end
+
+  local gaps = #text - 1
+  local extra = width - #text
+  local base = math.floor(extra / gaps)
+  local remainder = extra % gaps
+  local out = {}
+
+  for i = 1, #text do
+    out[#out + 1] = text:sub(i, i)
+    if i < #text then
+      local pad = base
+      if remainder > 0 then
+        pad = pad + 1
+        remainder = remainder - 1
+      end
+      out[#out + 1] = repeatChar(" ", pad)
+    end
+  end
+
+  return table.concat(out)
+end
+
 local function chooseLabelScale(monitorName, text)
   local candidates = { 3, 2, 1.5, 1 }
 
@@ -36,16 +69,18 @@ local function drawLabel(monitorName, text)
     error("Monitor not found: " .. tostring(monitorName))
   end
 
-  m.setTextScale(chooseLabelScale(monitorName, text))
+  local scale = chooseLabelScale(monitorName, text)
+  m.setTextScale(scale)
   m.setBackgroundColor(colors.black)
   m.setTextColor(colors.white)
   m.clear()
 
-  local _, h = m.getSize()
+  local w, h = m.getSize()
+  local displayText = stretchTextToWidth(text, w)
   local y = math.max(1, math.floor((h - 1) / 2) + 1)
 
-  m.setCursorPos(centerX(m, text), y)
-  m.write(text)
+  m.setCursorPos(centerX(m, displayText), y)
+  m.write(displayText)
 end
 
 for _, category in ipairs(CFG.categories) do
