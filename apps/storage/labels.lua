@@ -13,13 +13,30 @@ local function centerX(termObj, text)
   return math.max(1, math.floor((w - #text) / 2) + 1)
 end
 
+local function chooseLabelScale(monitorName, text)
+  local candidates = { 3, 2, 1.5, 1 }
+
+  for _, scale in ipairs(candidates) do
+    local monitor = peripheral.wrap(monitorName)
+    if monitor then
+      monitor.setTextScale(scale)
+      local w = select(1, monitor.getSize())
+      if #text <= w then
+        return scale
+      end
+    end
+  end
+
+  return 1
+end
+
 local function drawLabel(monitorName, text)
   local m = peripheral.wrap(monitorName)
   if not m then
     error("Monitor not found: " .. tostring(monitorName))
   end
 
-  m.setTextScale(1)
+  m.setTextScale(chooseLabelScale(monitorName, text))
   m.setBackgroundColor(colors.black)
   m.setTextColor(colors.white)
   m.clear()
