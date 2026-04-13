@@ -533,7 +533,12 @@ local function cycleLabelMonitorCandidate()
   end
 
   state.labelMonitorIndex = (state.labelMonitorIndex % #choices) + 1
-  setMessage("Label monitor picker: " .. choices[state.labelMonitorIndex])
+  local current = choices[state.labelMonitorIndex]
+  if not current then
+    state.labelMonitorIndex = 1
+    current = choices[1]
+  end
+  setMessage("Label monitor picker: " .. tostring(current))
 end
 
 local function assignedSet()
