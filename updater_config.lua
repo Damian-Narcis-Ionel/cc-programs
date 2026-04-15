@@ -48,6 +48,26 @@ return {
           path = "apps/storage/labels.lua",
         },
 
+        requester = {
+          file = "requester.lua",
+          path = "apps/storage/requester.lua",
+        },
+
+        requester_core = {
+          file = "requester_core.lua",
+          path = "apps/storage/requester_core.lua",
+        },
+
+        requester_pocket = {
+          file = "requester_pocket.lua",
+          path = "apps/storage/requester_pocket.lua",
+        },
+
+        requester_server = {
+          file = "requester_server.lua",
+          path = "apps/storage/requester_server.lua",
+        },
+
         setup_storage = {
           file = "setup_storage.lua",
           path = "apps/storage/setup_storage.lua",

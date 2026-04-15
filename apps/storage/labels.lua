@@ -13,51 +13,32 @@ local function centerX(termObj, text)
   return math.max(1, math.floor((w - #text) / 2) + 1)
 end
 
-local function abbreviateLabel(text, maxLen)
-  if #text <= maxLen then
-    return text
-  end
-
-  local words = {}
-  for word in text:gmatch("%S+") do
-    words[#words + 1] = word
-  end
-
-  if #words > 1 then
-    local acronym = {}
-    for _, word in ipairs(words) do
-      acronym[#acronym + 1] = word:sub(1, 1)
-    end
-    local short = table.concat(acronym)
-    if #short <= maxLen then
-      return short
-    end
-  end
-
-  return text:sub(1, maxLen)
-end
-
 local function chooseLabelLayout(monitorName, text)
+  local normalized = tostring(text or ""):upper():gsub("%s+", "")
   local candidates = { 5, 4, 3, 2, 1.5, 1 }
 
   for _, scale in ipairs(candidates) do
     local monitor = peripheral.wrap(monitorName)
     if monitor then
       monitor.setTextScale(scale)
-      local w = select(1, monitor.getSize())
-      if w >= 1 then
-        local displayText = abbreviateLabel(text, w)
-        if #displayText <= w then
-          return scale, displayText
-        end
+      local w, h = monitor.getSize()
+      local safeWidth = math.max(1, w - 1)
+      if h >= 1 and #normalized <= safeWidth then
+        return scale, normalized
       end
     end
   end
 
   local monitor = peripheral.wrap(monitorName)
-  monitor.setTextScale(1)
+  monitor.setTextScale(0.5)
   local w = select(1, monitor.getSize())
-  return 1, abbreviateLabel(text, math.max(1, w))
+  local safeWidth = math.max(1, w - 1)
+
+  if #normalized <= safeWidth then
+    return 0.5, normalized
+  end
+
+  return 0.5, normalized:sub(1, safeWidth)
 end
 
 local function drawLabel(monitorName, text)

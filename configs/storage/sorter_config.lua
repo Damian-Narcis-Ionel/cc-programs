@@ -5,6 +5,7 @@ end
 
 local chests = {
   input = chest(79),
+  output = "minecraft:chest_output",
 }
 
 local monitors = {
@@ -28,9 +29,16 @@ local monitors = {
   dem = "monitor_1",
 }
 
+local requester = {
+  inventory_manager = "inventoryManager_0",
+  output_direction = "front",
+  rednet_protocol = "cc_storage_requester",
+}
+
 return {
   chests = chests,
   monitors = monitors,
+  requester = requester,
 
   categories = {
     { key = "stone", label = "Stone", desired = 7, chests = {
